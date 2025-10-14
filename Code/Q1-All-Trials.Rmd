@@ -1,0 +1,919 @@
+---
+title: "Q1_All-Trials"
+author: "Tali Caspi"
+date: "2025-10-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# load packages
+library(tidyverse); library(brms); library(DHARMa.helpers); library(coda); library(ggpubr)
+library(bayestestR); library(purrr); library(broom.mixed)
+
+# set colors
+colors <- c("#AF8566", "#B5C861", "#79ACBD", "#E4DECE","#ECBD95", "#0E075A")
+
+# Make custom theme
+theme_custom <- function() {
+  theme_classic()+
+  theme(panel.grid.minor = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        plot.background = element_rect(fill = "white", color = NA),
+        plot.title = element_text(size = 7),
+        strip.background = element_blank(),
+        axis.text.y = element_text(size=10, color="black"),
+        axis.text.x = element_text(size=10, color="black"),
+        axis.title.y = element_text(size=12, color="black"),
+        axis.title.x = element_text(size=12, color="black"))}
+```
+
+# Load and Format data
+
+```{r}
+data_all <- read.csv("Data/Q1_Summary_All_DummyRows_Max_07282025.csv") %>% 
+  filter(Species != "Gray Fox" & Species != "Red Fox") %>%   # remove foxes
+  filter(Location != "Lake Chabot Dumpster") %>% # remove Lake Chabot
+  filter(Dummy != "dummy") # remove trials with no recorded data
+  
+data_all.RT <- data_all %>% 
+  mutate(OffCamera = ifelse(WasSolveOffCamera == "Yes", "Yes", "No")) %>% # make column if animals was ever off camera
+  mutate(PropVigilantMax_RT = ifelse(PropVigilantMax_RT == 1, 0.999, PropVigilantMax_RT)) %>%  # change prop vigilant 1's to 0.999
+  mutate(LookAtCamera_RT = ifelse(LookAtCamera_RT == "Yes", 1, 0)) %>% # code Yes as 1 and No as 0
+  mutate(Touch_RT = ifelse(Touch_RT == "Yes", 1, 0)) %>%  # code Yes as 1 and No as 0
+  # separate raccoons into two groups
+  mutate(Species = case_when(
+    Species == "Raccoon" & Condition == "Alone" ~ "Raccoon.Alone",
+    Species == "Raccoon" & Condition == "Group" ~ "Raccoon.Group",
+    TRUE ~ Species))
+
+data_all.PS <- data_all.RT %>% 
+  filter(Solve_PS != "DidNotAttempt") # remove no attempts at solve
+```
+
+# Summary stats
+
+## Risk-taking
+
+```{r}
+nrow(data_all.RT) # all observations
+table(data_all.RT$Species) # observations per species
+table(data_all.RT$Condition, data_all.RT$Species) # social context per species
+
+# number of locations tested
+data_all.RT %>%
+  distinct(Location) %>%
+  count()
+
+# number of locations with puzzle solved
+data_all.RT %>%
+  filter(Solve_PS == "Yes") %>%
+  distinct(Location) %>%
+  count()
+
+RT.species.means.all <- data_all.RT %>% 
+  group_by(Species) %>% 
+  summarize(meanPropVig = mean(PropVigilantMax_RT, na.rm=T),
+            meanTotExp = mean(TotalExplorationMax_RT, na.rm=T),
+            total.look = sum(LookAtCamera_RT, na.rm=T),
+            total.touch = sum(Touch_RT, na.rm=T),
+            total.trials = n()) %>% 
+  mutate(p.look = total.look/total.trials,
+         p.touch = total.touch/total.trials)
+
+RT.species.means.all
+```
+
+## Problem-solving
+
+```{r}
+nrow(data_all.PS) # all problem-solving attempts
+table(data_all.PS$Species) # observations per species
+table(data_all.PS$Solve_PS, data_all.PS$Species) # solves per species
+table(data_all.PS$Condition, data_all.PS$Species) # social context per species
+
+PS.species.means.all <- data_all.PS %>% 
+  group_by(Species) %>% 
+  summarize(meanExpDiv = mean(ExploratoryDiversityMax_PS, na.rm=T),
+            meanWorkTime = mean(WorkTimeMax_PS, na.rm=T),
+            meanActRate = mean(ActivityRateMax_PS, na.rm=T),
+            total.solves = sum(Solve_PS_Binary,na.rm=T),
+            total.attempts = n()) %>% 
+  mutate(p.Solve = total.solves/total.attempts)
+
+PS.species.means.all
+```
+
+# Q1) How do species differ in their risk-taking and problem-solving behavior?
+
+## Set Priors
+
+```{r}
+base_priors <- c(
+  prior(normal(0, 1), class = "b"),   # fixed effects        
+  prior(normal(0, 1.5), class = "Intercept"),  # intercept
+  prior(exponential(1), class = "sd")) # random effect
+
+base_priors_zi <-  c(
+  prior(normal(0,1), class = "b"),                    
+  prior(normal(0,1.5), class = "Intercept"),            
+  prior(normal(0,1.5), class = "Intercept", dpar = "zi"), # set prior for zi
+  prior(exponential(1), class = "sd"))
+
+base_priors_ln <- c(
+  prior(normal(0, 1), class = "b"),      
+  prior(normal(0, 2), class = "Intercept"), 
+  prior(exponential(1), class = "sd"))
+```
+
+## Construct Models
+
+All models include Trial Number as a fixed effect. OffCamera is included as a fixed effect for behaviors it is relevant to.
+
+### Risk-taking models
+
+```{r}
+# Proportion of time spent vigilant
+mod.prop.vig.all <- brm(bf(PropVigilantMax_RT ~ scale(TrialNumber_RT) + OffCamera + (1 | Species),
+                       zi ~ (1 | Species)),
+  family = zero_inflated_beta(), data = data_all.RT, # zero-inflated beta regression
+  prior = base_priors_zi,
+  cores = 4, chains = 4,  iter = 4000, warmup = 2000,
+  control = list(adapt_delta = 0.99, max_treedepth=15))
+
+# Look at camera
+mod.look.cam.all <- brm(LookAtCamera_RT ~  scale(TrialNumber_RT) + (1 | Species),
+                    family = bernoulli(link = "logit"), data = data_all.RT, # bernoulli
+                    chains = 4,  cores = 4,  iter = 4000,
+                    prior = base_priors,
+                    control = list(adapt_delta = 0.99, max_treedepth=15))
+
+# Touch puzzle
+mod.touch.all <- brm(Touch_RT ~ scale(TrialNumber_RT) + (1 | Species),
+                    family = bernoulli(link = "logit"), data = data_all.RT, # bernoulli
+                    chains = 4,  cores = 4,  iter = 4000,
+                    prior = base_priors,
+                 control = list(adapt_delta = 0.99, max_treedepth=15))
+
+# Total exploration (number of behaviors exhibited in interactions with puzzle)
+data_all.RT_outlier <- data_all.RT %>% 
+  filter(TotalExplorationMax_RT < 113) # remove one outlier with very high value for total exploration
+
+mean_val <- mean(data_all.RT_outlier$TotalExplorationMax_RT)
+var_val <- var(data_all.RT_outlier$TotalExplorationMax_RT)
+cat("Mean:", mean_val, " | Variance:", var_val) # over-dispersed so cannot use poisson distribution -> use negative binomial model
+
+mod.tot.exp.all <- brm(TotalExplorationMax_RT ~ scale(TrialNumber_RT) + OffCamera + (1 | Species),
+                   family = negbinomial(),  data = data_all.RT_outlier, # negative binomial
+                   chains = 4,  cores = 4,  iter = 4000,
+                   prior = base_priors_ln,
+                   control = list(adapt_delta = 0.99, max_treedepth=15))
+
+mod.tot.exp.all.test <- brm(TotalExplorationMax_RT ~ scale(TrialNumber_RT) + OffCamera + (1 | Species),
+                   family = negbinomial(one_inflated = TRUE),  data = data_all.RT_outlier, # negative binomial
+                   chains = 4,  cores = 4,  iter = 4000,
+                   prior = base_priors_ln,
+                   control = list(adapt_delta = 0.99, max_treedepth=15))
+
+
+# Posterior predictive checks
+pp_check(mod.prop.vig.all, ndraws=100)
+pp_check(mod.look.cam.all, ndraws=100)
+pp_check(mod.touch.all, ndraws=100)
+pp_check(mod.tot.exp.all, ndraws=100)
+
+# DHARMA
+dh_check_brms(mod.prop.vig.all)
+dh_check_brms(mod.look.cam.all)
+dh_check_brms(mod.touch.all)
+dh_check_brms(mod.tot.exp.all)
+
+# Save models
+saveRDS(mod.prop.vig.all, "Model_Output/Q1-All-Attempts/mod.prop.vig.all.rds")
+saveRDS(mod.look.cam.all, "Model_Output/Q1-All-Attempts/mod.look.cam.all.rds")
+saveRDS(mod.touch.all, "Model_Output/Q1-All-Attempts/mod.touch.all.rds")
+saveRDS(mod.tot.exp.all, "Model_Output/Q1-All-Attempts/mod.tot.exp.all.rds")
+
+# Load models
+mod.prop.vig.all <- readRDS("Model_Output/Q1-All-Attempts/mod.prop.vig.all.rds")
+mod.look.cam.all <- readRDS("Model_Output/Q1-All-Attempts/mod.look.cam.all.rds")
+mod.touch.all <- readRDS("Model_Output/Q1-All-Attempts/mod.touch.all.rds")
+mod.tot.exp.all <- readRDS("Model_Output/Q1-All-Attempts/mod.tot.exp.all.rds")
+```
+
+### Problem-solving models
+
+```{r}
+# Exploratory diversity
+hist(data_all.PS$ExploratoryDiversityMax_PS)
+mean_val <- mean(data_all.PS$ExploratoryDiversityMax_PS)
+var_val <- var(data_all.PS$ExploratoryDiversityMax_PS)
+cat("Mean:", mean_val, " | Variance:", var_val) # look at dispersion
+
+mod.exp.div.all <- brm(ExploratoryDiversityMax_PS | trunc(lb = 1) ~ scale(TrialNumber_PS) + OffCamera + (1 | Species),
+                   family = poisson(),  data = data_all.PS, # poisson
+                   chains = 4,  cores = 4,  iter = 4000,
+                   prior = base_priors,
+                   control = list(adapt_delta = 0.99, max_treedepth=15))
+
+# Work time
+hist(log(data_all.PS$WorkTimeMax_PS))
+
+mod.work.time.all <- brm(WorkTimeMax_PS ~ scale(TrialNumber_PS) + OffCamera + (1 | Species),
+                   family = lognormal(),  data = data_all.PS, # lognormal
+                   chains = 4,  cores = 4,  iter = 4000,
+                   prior = base_priors_ln,
+                   control = list(adapt_delta = 0.99, max_treedepth=15))
+
+# Activity rate
+hist(log(data_all.PS$ActivityRateMax_PS))
+
+mod.act.rate.all <- brm(ActivityRateMax_PS ~ scale(TrialNumber_PS) + OffCamera + (1 | Species),
+                   family = lognormal(),  data = data_all.PS, # lognormal
+                   chains = 4,  cores = 4,  iter = 4000,
+                   prior = base_priors_ln,
+                   control = list(adapt_delta = 0.99, max_treedepth=15))
+
+# Solve success
+mod.solve.all <- brm(Solve_PS_Binary ~ scale(TrialNumber_PS) + (1 | Species),
+                    family = bernoulli(link = "logit"), data = data_all.PS, # bernoulli
+                    chains = 4,  cores = 4,  iter = 4000,
+                    prior = base_priors,
+                   control = list(adapt_delta = 0.99, max_treedepth=15))
+
+# Posterior predictive checks
+pp_check(mod.exp.div.all, ndraws=100)
+pp_check(mod.work.time.all, ndraws=100)
+pp_check(mod.act.rate.all, ndraws=100)
+pp_check(mod.solve.all, ndraws=100)
+
+# DHARMA
+dh_check_brms(mod.exp.div.all)
+dh_check_brms(mod.work.time.all)
+dh_check_brms(mod.act.rate.all)
+dh_check_brms(mod.solve.all)
+
+# Save models
+saveRDS(mod.exp.div.all, "Model_Output/Q1-All-Attempts/mod.exp.div.all.rds")
+saveRDS(mod.work.time.all, "Model_Output/Q1-All-Attempts/mod.work.time.all.rds")
+saveRDS(mod.act.rate.all, "Model_Output/Q1-All-Attempts/mod.act.rate.all.rds")
+saveRDS(mod.solve.all, "Model_Output/Q1-All-Attempts/mod.solve.all.rds")
+```
+
+## Load Models
+
+If not re-running model, load all model output:
+
+```{r}
+# Load models
+model_files <- list.files("Model_Output/Q1-All-Attempts/", pattern = "\\.rds$", full.names = TRUE)
+
+# Load each model to the environment
+walk(model_files, function(file) {
+  model_name <- str_remove(basename(file), "\\.rds$")
+  assign(model_name, readRDS(file), envir = .GlobalEnv)
+})
+```
+
+# Plot random intercepts
+
+### Proportion Vigilant
+
+```{r}
+# Extract posterior samples
+post_samps <- posterior_samples(mod.prop.vig.all)
+
+# Extract species random intercepts for mean part (mu)
+mu_species_cols <- grep("^r_Species\\[.*Intercept\\]$", colnames(post_samps), value = TRUE)
+
+posterior_species_mu <- post_samps[, mu_species_cols] %>%
+  as_tibble() %>%
+  pivot_longer(cols = everything(), names_to = "species_id", values_to = "value") %>%
+  mutate(Species = sub("r_Species\\[(.*),Intercept\\]", "\\1", species_id))
+
+# Add draw number to track posterior draws
+posterior_species_mu <- posterior_species_mu %>%
+  mutate(draw = rep(1:(nrow(post_samps)), each = length(mu_species_cols)))
+
+# Add fixed intercept for mu (population-level intercept)
+fixef_draws_mu <- as.data.frame(post_samps$b_Intercept) %>% 
+  mutate(draw = seq(1:nrow(post_samps)))
+
+posterior_species_mu <- posterior_species_mu %>%
+  left_join(fixef_draws_mu, by="draw") %>% 
+  rename(b_Intercept = 'post_samps$b_Intercept') %>% 
+  mutate(value_resp = b_Intercept + value) %>%
+  mutate(mu = plogis(value_resp))   # inverse logit link for mean
+
+# Extract species random intercepts for zero-inflation (zi) part
+zi_species_cols <- grep("^r_Species__zi\\[.*Intercept\\]$", colnames(post_samps), value = TRUE)
+
+posterior_species_zi <- post_samps[, zi_species_cols] %>%
+  as_tibble() %>%
+  pivot_longer(cols = everything(), names_to = "species_id", values_to = "value") %>%
+  mutate(Species = sub("r_Species__zi\\[(.*),Intercept\\]", "\\1", species_id))
+
+posterior_species_zi <- posterior_species_zi %>%
+  mutate(draw = rep(1:(nrow(post_samps)), each = length(zi_species_cols)))
+
+# Add fixed intercept for zero inflation (population-level zi intercept)
+fixef_draws_zi <- as.data.frame(post_samps$b_zi_Intercept) %>% 
+  mutate(draw = seq(1:nrow(post_samps)))
+
+posterior_species_zi <- posterior_species_zi %>%
+  left_join(fixef_draws_zi, by="draw") %>% 
+  rename(b_zi_Intercept = 'post_samps$b_zi_Intercept') %>% 
+  mutate(value_zi = b_zi_Intercept + value) %>%
+  mutate(zi_prob = plogis(value_zi))
+
+# Combine mu and zi by Species and draw to get probability of vigilance while incorporating zero inflation
+posterior_combined <- posterior_species_mu %>%
+  inner_join(posterior_species_zi, by = c("Species", "draw")) %>%
+  mutate(expected_prop = (1 - zi_prob) * mu) # probability of being vigilant times mean proportion vigilant
+
+
+# Calculate mean expected proportion for each species and CI
+posterior_plotting <- posterior_combined %>%
+  group_by(Species) %>%
+  summarise(
+    mean_prob = mean(expected_prop),
+    lower_95 = HPDinterval(as.mcmc(expected_prop), prob = 0.95)[,1],
+    upper_95 = HPDinterval(as.mcmc(expected_prop), prob = 0.95)[,2],
+    lower_90 = HPDinterval(as.mcmc(expected_prop), prob = 0.90)[,1],
+    upper_90 = HPDinterval(as.mcmc(expected_prop), prob = 0.90)[,2]) %>% 
+  ungroup()
+
+p.vigilance <- ggplot(posterior_plotting, aes(y = Species, x = mean_prob, color = Species, fill=Species)) +
+  # 95% interval (transparent)
+  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
+  # 90% interval (solid)
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # Mean point
+  geom_point(shape = 124, size = 4, color = "black") +
+  scale_x_continuous(limits = c(0, 1),
+                     expand = expansion(mult = c(0.02, 0.02))) +
+  scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
+                              "Raccoon - Group", "Skunk"))+
+  labs(x = "Predicted Proportion Time Vigilant",
+       y = NULL) +
+  scale_color_manual(values = colors) +
+  theme_custom() +
+  theme(legend.position = "none")
+
+p.vigilance
+```
+
+### Look at Camera
+
+```{r}
+# Extract posterior samples
+post_samps <- posterior_samples(mod.look.cam.all)
+
+# Extract species random intercepts
+species_cols <- grep("^r_Species\\[.*Intercept\\]$", colnames(post_samps), value = TRUE)
+
+posterior_species <- post_samps[, species_cols] %>%
+  as_tibble() %>%
+  pivot_longer(cols = everything(), names_to = "species_id", values_to = "value") %>%
+  mutate(Species = sub("r_Species\\[(.*),Intercept\\]", "\\1", species_id))
+
+# Add draw number to track posterior draws
+posterior_species <- posterior_species %>%
+  mutate(draw = rep(1:(nrow(post_samps)), each = length(species_cols)))
+
+# Add fixed intercept (population-level intercept)
+fixef_draws <- as.data.frame(post_samps$b_Intercept) %>% 
+  mutate(draw = seq(1:nrow(post_samps)))
+
+posterior_species <- posterior_species %>%
+  left_join(fixef_draws, by="draw") %>% 
+  rename(b_Intercept = 'post_samps$b_Intercept') %>% 
+  mutate(value_resp =  b_Intercept + value) %>%
+  mutate(prob = plogis(value_resp)) # inverse logit to get probability
+
+# Calculate mean expected proportion for each species and CI
+posterior_plotting <- posterior_species %>%
+  group_by(Species) %>%
+  summarise(
+    mean_prob = mean(prob),
+    lower_95 = HPDinterval(as.mcmc(prob), prob = 0.95)[,1],
+    upper_95 = HPDinterval(as.mcmc(prob), prob = 0.95)[,2],
+    lower_90 = HPDinterval(as.mcmc(prob), prob = 0.90)[,1],
+    upper_90 = HPDinterval(as.mcmc(prob), prob = 0.90)[,2]) %>% 
+  ungroup()
+
+
+# Plot
+p.look.cam <- ggplot(posterior_plotting, aes(y = Species, x = mean_prob, color = Species, fill=Species)) +
+  # 95% interval (transparent)
+  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
+  # 90% interval (solid)
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # Mean point
+  geom_point(shape = 124, size = 4, color = "black") +
+  scale_x_continuous(limits = c(0, 1),
+                     expand = expansion(mult = c(0.02, 0.02))) +
+  scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
+                              "Raccoon - Group", "Skunk"))+
+  labs(x = "Predicted Probability of Looking at Camera",
+       y = NULL) +
+  scale_color_manual(values = colors) +
+  theme_custom() +
+  theme(legend.position = "none")
+
+p.look.cam
+```
+
+### Touch puzzle
+
+```{r}
+# Extract posterior samples for mod.touch
+post_samps <- posterior_samples(mod.touch.all)
+
+# Extract species random intercepts columns
+posterior_species <- post_samps[, species_cols] %>%
+  as_tibble() %>%
+  pivot_longer(cols = everything(), names_to = "species_id", values_to = "value") %>%
+  mutate(Species = sub("r_Species\\[(.*),Intercept\\]", "\\1", species_id))
+
+# Add draw number to track posterior draws
+posterior_species <- posterior_species %>%
+  mutate(draw = rep(1:(nrow(post_samps)), each = length(species_cols)))
+
+# Add fixed intercept (population-level intercept)
+fixef_draws <- as.data.frame(post_samps$b_Intercept) %>% 
+  mutate(draw = seq(1:nrow(post_samps)))
+
+posterior_species <- posterior_species %>%
+  left_join(fixef_draws, by="draw") %>% 
+  rename(b_Intercept = 'post_samps$b_Intercept') %>% 
+  mutate(value_resp = b_Intercept + value) %>%
+  mutate(prob = plogis(value_resp)) # inverse logit to get probability
+
+# Calculate mean expected proportion for each species and CI
+posterior_plotting <- posterior_species %>%
+  group_by(Species) %>%
+  summarise(
+    mean_prob = mean(prob),
+    lower_95 = HPDinterval(as.mcmc(prob), prob = 0.95)[,1],
+    upper_95 = HPDinterval(as.mcmc(prob), prob = 0.95)[,2],
+    lower_90 = HPDinterval(as.mcmc(prob), prob = 0.90)[,1],
+    upper_90 = HPDinterval(as.mcmc(prob), prob = 0.90)[,2]) %>% 
+  ungroup()
+
+# Plot
+p.touch.puz <- ggplot(posterior_plotting, aes(y = Species, x = mean_prob, color = Species, fill=Species)) +
+  # 95% interval (transparent)
+  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
+  # 90% interval (solid)
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # Mean point
+  geom_point(shape = 124, size = 4, color = "black") +
+  scale_x_continuous(limits = c(0, 1),
+                     expand = expansion(mult = c(0.02, 0.02))) +
+  scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
+                              "Raccoon - Group", "Skunk"))+
+  labs(x = "Predicted Probability of Touching Puzzle",
+       y = NULL) +
+  scale_color_manual(values = colors) +
+  theme_custom() +
+  theme(legend.position = "none")
+
+p.touch.puz
+```
+
+### Total exploration
+
+```{r}
+# Extract posterior samples for mod.tot.exp
+post_samps <- posterior_samples(mod.tot.exp.all)
+
+# Extract species random intercept columns for mean (mu)
+posterior_species <- post_samps[, species_cols] %>%
+  as_tibble() %>%
+  pivot_longer(cols = everything(), names_to = "species_id", values_to = "value") %>%
+  mutate(Species = sub("r_Species\\[(.*),Intercept\\]", "\\1", species_id))
+
+# Add draw number to track posterior draws
+posterior_species <- posterior_species %>%
+  mutate(draw = rep(1:(nrow(post_samps)), each = length(species_cols)))
+
+# Add fixed intercept (population-level intercept)
+fixef_draws <- as.data.frame(post_samps$b_Intercept) %>% 
+  mutate(draw = seq(1:nrow(post_samps)))
+
+posterior_species <- posterior_species %>%
+  left_join(fixef_draws, by="draw") %>% 
+  rename(b_Intercept = 'post_samps$b_Intercept') %>% 
+  mutate(value_resp = b_Intercept + value) %>%
+  mutate(mu = exp(value_resp)) # inverse log link to get expected counts
+
+# Calculate mean expected proportion for each species and CI
+posterior_plotting <- posterior_species %>%
+  group_by(Species) %>%
+  summarise(
+    mean_mu = mean(mu),
+    lower_95 = HPDinterval(as.mcmc(mu), prob = 0.95)[,1],
+    upper_95 = HPDinterval(as.mcmc(mu), prob = 0.95)[,2],
+    lower_90 = HPDinterval(as.mcmc(mu), prob = 0.90)[,1],
+    upper_90 = HPDinterval(as.mcmc(mu), prob = 0.90)[,2]) %>% 
+  ungroup()
+
+
+# Plot
+p.tot.exp <- ggplot(posterior_plotting, aes(y = Species, x = mean_mu, color = Species, fill=Species)) +
+  # 95% interval (transparent)
+  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
+  # 90% interval (solid)
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # Mean point
+  geom_point(shape = 124, size = 4, color = "black") +
+  scale_x_continuous(limits = c(0, 21),
+                     expand = expansion(mult = c(0.02, 0.02))) +
+  scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
+                              "Raccoon - Group", "Skunk"))+
+  labs(x = "Predicted Total Exploration (Count)",
+       y = NULL) +
+  scale_color_manual(values = colors) +
+  theme_custom() +
+  theme(legend.position = "none")
+
+p.tot.exp
+```
+
+### Exploratory diversity
+
+```{r}
+# Extract posterior samples
+post_samps <- posterior_samples(mod.exp.div.all)
+colnames(post_samps)
+
+# Extract species random intercept columns for mean (mu)
+species_cols <- grep("^r_Species\\[.*Intercept\\]$", colnames(post_samps), value = TRUE)
+
+posterior_species <- post_samps[, species_cols] %>%
+  as_tibble() %>%
+  pivot_longer(cols = everything(), names_to = "species_id", values_to = "value") %>%
+  mutate(Species = sub("r_Species\\[(.*),Intercept\\]", "\\1", species_id))
+
+# Add draw number to track posterior draws
+posterior_species <- posterior_species %>%
+  mutate(draw = rep(1:(nrow(post_samps)), each = length(species_cols)))
+
+# Add fixed intercept (population-level intercept)
+fixef_draws <- as.data.frame(post_samps$b_Intercept) %>% 
+  mutate(draw = seq(1:nrow(post_samps)))
+
+posterior_species <- posterior_species %>%
+  left_join(fixef_draws, by="draw") %>% 
+  rename(b_Intercept = 'post_samps$b_Intercept') %>% 
+  mutate(value_resp = b_Intercept +  value) %>%
+  mutate(mu = exp(value_resp)) # exponentiate to get expected counts
+
+# Calculate mean expected proportion for each species and CI
+posterior_plotting <- posterior_species %>%
+  group_by(Species) %>%
+  summarise(
+    mean_mu = mean(mu),
+    lower_95 = HPDinterval(as.mcmc(mu), prob = 0.95)[,1],
+    upper_95 = HPDinterval(as.mcmc(mu), prob = 0.95)[,2],
+    lower_90 = HPDinterval(as.mcmc(mu), prob = 0.90)[,1],
+    upper_90 = HPDinterval(as.mcmc(mu), prob = 0.90)[,2]) %>% 
+  ungroup()
+
+# Plot
+p.exp.div <- ggplot(posterior_plotting, aes(y = Species, x = mean_mu, color = Species, fill=Species)) +
+  # 95% interval (transparent)
+  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
+  # 90% interval (solid)
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # Mean point
+  geom_point(shape = 124, size = 4, color = "black") +
+  scale_x_continuous(limits = c(0, 6.5),
+                     expand = expansion(mult = c(0.02, 0.02))) +
+  scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
+                              "Raccoon - Group", "Skunk"))+
+  labs(x = "Predicted Exploratory Diversity (Count)",
+       y = NULL) +
+  scale_color_manual(values = colors) +
+  theme_custom() +
+  theme(legend.position = "none")
+
+p.exp.div
+```
+
+### Work time
+
+```{r}
+# Extract posterior samples
+post_samps <- posterior_samples(mod.work.time.all)
+
+# Extract species random intercept columns for mean (mu)
+posterior_species <- post_samps[, species_cols] %>%
+  as_tibble() %>%
+  pivot_longer(cols = everything(), names_to = "species_id", values_to = "value") %>%
+  mutate(Species = sub("r_Species\\[(.*),Intercept\\]", "\\1", species_id))
+
+# Add draw number to track posterior draws
+posterior_species <- posterior_species %>%
+  mutate(draw = rep(1:(nrow(post_samps)), each = length(species_cols)))
+
+# Add fixed intercept (population-level intercept)
+fixef_draws <- as.data.frame(post_samps$b_Intercept) %>% 
+  mutate(draw = seq(1:nrow(post_samps)))
+
+posterior_species <- posterior_species %>%
+  left_join(fixef_draws, by="draw") %>% 
+  rename(b_Intercept = 'post_samps$b_Intercept') %>% 
+  mutate(mu = exp(b_Intercept + value))
+
+# Calculate mean expected proportion for each species and CI
+posterior_plotting <- posterior_species %>%
+  group_by(Species) %>%
+  summarise(
+    mean_mu = mean(mu),
+    lower_95 = HPDinterval(as.mcmc(mu), prob = 0.95)[,1],
+    upper_95 = HPDinterval(as.mcmc(mu), prob = 0.95)[,2],
+    lower_90 = HPDinterval(as.mcmc(mu), prob = 0.90)[,1],
+    upper_90 = HPDinterval(as.mcmc(mu), prob = 0.90)[,2]) %>% 
+  ungroup()
+
+# Plot
+p.work.time <- ggplot(posterior_plotting, aes(y = Species, x = mean_mu, color = Species, fill=Species)) +
+  # 95% interval (transparent)
+  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
+  # 90% interval (solid)
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # Mean point
+  geom_point(shape = 124, size = 4, color = "black") +
+  scale_x_continuous(limits = c(0, 75),
+                     expand = expansion(mult = c(0.02, 0.02))) +
+  scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
+                              "Raccoon - Group", "Skunk"))+
+  labs(x = "Predicted Work Time (Seconds)",
+       y = NULL) +
+  scale_color_manual(values = colors) +
+  theme_custom() +
+  theme(legend.position = "none")
+
+p.work.time
+```
+
+### Activity rate
+
+```{r}
+# Extract posterior samples
+post_samps <- posterior_samples(mod.act.rate.all)
+
+# Extract species random intercept columns for mean (mu)
+posterior_species <- post_samps[, species_cols] %>%
+  as_tibble() %>%
+  pivot_longer(cols = everything(), names_to = "species_id", values_to = "value") %>%
+  mutate(Species = sub("r_Species\\[(.*),Intercept\\]", "\\1", species_id))
+
+# Add draw number to track posterior draws
+posterior_species <- posterior_species %>%
+  mutate(draw = rep(1:(nrow(post_samps)), each = length(species_cols)))
+
+# Add fixed intercept (population-level intercept)
+fixef_draws <- as.data.frame(post_samps$b_Intercept) %>% 
+  mutate(draw = seq(1:nrow(post_samps)))
+
+posterior_species <- posterior_species %>%
+  left_join(fixef_draws, by="draw") %>% 
+  rename(b_Intercept = 'post_samps$b_Intercept') %>% 
+  mutate(mu = exp(b_Intercept + value))
+
+# Calculate mean expected proportion for each species and CI
+posterior_plotting <- posterior_species %>%
+  group_by(Species) %>%
+  summarise(
+    mean_mu = mean(mu),
+    lower_95 = HPDinterval(as.mcmc(mu), prob = 0.95)[,1],
+    upper_95 = HPDinterval(as.mcmc(mu), prob = 0.95)[,2],
+    lower_90 = HPDinterval(as.mcmc(mu), prob = 0.90)[,1],
+    upper_90 = HPDinterval(as.mcmc(mu), prob = 0.90)[,2]) %>% 
+  ungroup()
+
+# 6. Plot ridge plot with mean expected counts points
+p.act.time <- ggplot(posterior_plotting, aes(y = Species, x = mean_mu, color = Species, fill=Species)) +
+  # 95% interval (transparent)
+  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
+  # 90% interval (solid)
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # Mean point
+  geom_point(shape = 124, size = 4, color = "black") +
+  scale_x_continuous(limits = c(0, 1.5),
+                     expand = expansion(mult = c(0.02, 0.02))) +
+  scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
+                              "Raccoon - Group", "Skunk"))+
+  labs(x = "Predicted Activity Rate",
+       y = NULL) +
+  scale_color_manual(values = colors) +
+  theme_custom() +
+  theme(legend.position = "none")
+
+p.act.time
+```
+
+### Problem-solving success
+
+```{r}
+# Extract posterior samples
+post_samps <- posterior_samples(mod.solve.all)
+
+# Extract species random intercepts columns
+posterior_species <- post_samps[, species_cols] %>%
+  as_tibble() %>%
+  pivot_longer(cols = everything(), names_to = "species_id", values_to = "value") %>%
+  mutate(Species = sub("r_Species\\[(.*),Intercept\\]", "\\1", species_id))
+
+# Add draw number to track posterior draws
+posterior_species <- posterior_species %>%
+  mutate(draw = rep(1:(nrow(post_samps)), each = length(species_cols)))
+
+# Add fixed intercept (population-level intercept)
+fixef_draws <- as.data.frame(post_samps$b_Intercept) %>% 
+  mutate(draw = seq(1:nrow(post_samps)))
+
+posterior_species <- posterior_species %>%
+  left_join(fixef_draws, by="draw") %>% 
+  rename(b_Intercept = 'post_samps$b_Intercept') %>% 
+  mutate(value_resp = b_Intercept + value) %>%
+  mutate(prob = plogis(value_resp)) # inverse logit to get probability
+
+# Calculate mean expected proportion for each species and CI
+posterior_plotting <- posterior_species %>%
+  group_by(Species) %>%
+  summarise(
+    mean_prob = mean(prob),
+    lower_95 = HPDinterval(as.mcmc(prob), prob = 0.95)[,1],
+    upper_95 = HPDinterval(as.mcmc(prob), prob = 0.95)[,2],
+    lower_90 = HPDinterval(as.mcmc(prob), prob = 0.90)[,1],
+    upper_90 = HPDinterval(as.mcmc(prob), prob = 0.90)[,2]) %>% 
+  ungroup()
+
+# 6. Plot ridge plot with mean probability points
+p.solve <- ggplot(posterior_plotting, aes(y = Species, x = mean_prob, color = Species, fill=Species)) +
+  # 95% interval (transparent)
+  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
+  # 90% interval (solid)
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # Mean point
+  geom_point(shape = 124, size = 4, color = "black") +
+  scale_x_continuous(limits = c(0, 1),
+                     expand = expansion(mult = c(0.02, 0.02))) +
+  scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
+                              "Raccoon - Group", "Skunk"))+
+  labs(x = "Predicted Probability of Solving",
+       y = NULL) +
+  scale_color_manual(values = colors) +
+  theme_custom() +
+  theme(legend.position = "none")
+
+p.solve
+```
+
+## Arrange plots
+
+```{r}
+# Arrange risk-taking plots
+ggarrange(p.vigilance, p.look.cam, p.touch.puz, p.tot.exp,
+          align="hv")
+
+# ggsave("Figures/RT.plots_all_attempts.png", dpi=600, height=6, width=10)
+
+# Arrange problem-solving plots
+ggarrange(p.exp.div, p.work.time, p.act.time, p.solve,
+          align="hv")
+
+# ggsave("Figures/PS.plots_all_attempts.png", dpi=600, height=6, width=10)
+```
+
+# Extract and Format Model Results
+
+```{r}
+# Extract tables for each model
+table.prop.vig <- broom.mixed::tidy(mod.prop.vig.all, conf.method="HPDinterval") %>% 
+  mutate(term = c('Conditional Intercept', 'Zero-Inflation Intercept', 'Trial Number', 'Off Camera: Yes', 'Conditional Species Intercept', 'Zero-Inflation Species Intercept')) %>% 
+  rename_all(str_to_title) %>% 
+  select(-c(Component, Group, Std.error)) %>% 
+  mutate(Model = 'Proportion Vigilant') %>% 
+  relocate(Model)
+
+table.look.cam <- broom.mixed::tidy(mod.look.cam.all, conf.method="HPDinterval") %>% 
+  mutate(term = c('Intercept', 'Trial Number', 'Species Intercept')) %>% 
+  rename_all(str_to_title) %>% 
+  select(-c(Component, Group, Std.error)) %>% 
+  mutate(Model = 'Look At Camera') %>% 
+  relocate(Model)
+
+table.touch <- broom.mixed::tidy(mod.touch.all, conf.method="HPDinterval") %>% 
+  mutate(term = c('Intercept', 'Trial Number', 'Species Intercept')) %>% 
+  rename_all(str_to_title) %>% 
+  select(-c(Component, Group, Std.error)) %>% 
+  mutate(Model = 'Touch Camera') %>% 
+  relocate(Model)
+
+table.tot.exp <- broom.mixed::tidy(mod.tot.exp.all, conf.method="HPDinterval") %>% 
+  mutate(term = c('Intercept', 'Trial Number', 'Off Camera: Yes', 'Species Intercept')) %>% 
+  rename_all(str_to_title) %>% 
+  select(-c(Component, Group, Std.error)) %>% 
+  mutate(Model = 'Total Exploration') %>% 
+  relocate(Model)
+
+table.exp.div <- broom.mixed::tidy(mod.exp.div.all, conf.method="HPDinterval") %>% 
+  mutate(term = c('Intercept', 'Trial Number', 'Off Camera: Yes', 'Species Intercept')) %>% 
+  rename_all(str_to_title) %>% 
+  select(-c(Component, Group, Std.error)) %>% 
+  mutate(Model = 'Exploratory Diversity') %>% 
+  relocate(Model)
+
+table.work.time <- broom.mixed::tidy(mod.work.time.all, conf.method="HPDinterval") %>% 
+  mutate(term = c('Intercept', 'Trial Number', 'Off Camera: Yes', 'Species Intercept', 'Residual')) %>% 
+  rename_all(str_to_title) %>% 
+  select(-c(Component, Group, Std.error)) %>% 
+  mutate(Model = 'Work Time') %>% 
+  relocate(Model)
+
+table.act.time <- broom.mixed::tidy(mod.act.rate.all, conf.method="HPDinterval") %>% 
+  mutate(term = c('Intercept', 'Trial Number', 'Off Camera: Yes', 'Species Intercept', 'Residual')) %>% 
+  rename_all(str_to_title) %>% 
+  select(-c(Component, Group, Std.error)) %>% 
+  mutate(Model = 'Activity Rate') %>% 
+  relocate(Model)
+
+table.solve <- broom.mixed::tidy(mod.solve.all, conf.method="HPDinterval") %>% 
+  mutate(term = c('Intercept', 'Trial Number', 'Species Intercept')) %>% 
+  rename_all(str_to_title) %>% 
+  select(-c(Component, Group, Std.error)) %>% 
+  mutate(Model = 'Solve Success') %>% 
+  relocate(Model)
+
+# Calculate R2 values
+r2_propvig <- performance::r2_bayes(mod.prop.vig.all)
+r2_lookcam <- performance::r2_bayes(mod.look.cam.all)
+r2_touch <- performance::r2_bayes(mod.touch.all)
+r2_totexp <- performance::r2_bayes(mod.tot.exp.all)
+r2_expdiv <- performance::r2_bayes(mod.exp.div.all)
+r2_worktime <- performance::r2_bayes(mod.work.time.all)
+r2_actrate <- performance::r2_bayes(mod.act.rate.all)
+r2_solve <- performance::r2_bayes(mod.solve.all)
+
+# Store in a list
+r2_list <- list(
+  'Proportion Vigilant' = r2_propvig,
+  'Look At Camera' = r2_lookcam,
+  'Touch Camera' = r2_touch,
+  'Total Exploration' = r2_totexp,
+  'Exploratory Diversity' = r2_expdiv, 
+  'Work Time' = r2_worktime,
+  'Activity Rate' = r2_actrate,
+  'Solve Success' = r2_solve)
+
+r2_table <- data.frame(
+  Model = names(r2_list),
+  Marginal_R2 = sapply(r2_list, function(x) x$R2_Bayes_marginal),
+  Conditional_R2 = sapply(r2_list, function(x) x$R2_Bayes),
+  Marginal_CI_low = sapply(r2_list, function(x) attr(x, "CI")$R2_Bayes_marginal$CI_low),
+  Marginal_CI_high = sapply(r2_list, function(x) attr(x, "CI")$R2_Bayes_marginal$CI_high),
+  Conditional_CI_low = sapply(r2_list, function(x) attr(x, "CI")$R2_Bayes$CI_low),
+  Conditional_CI_high = sapply(r2_list, function(x) attr(x, "CI")$R2_Bayes$CI_high)) %>% 
+  mutate('Marginal R2 [95% CI]' = paste0(
+    sprintf("%.2f", Marginal_R2), " [",
+    sprintf("%.2f", Marginal_CI_low), ", ",
+    sprintf("%.2f", Marginal_CI_high), "]"
+  )) %>% 
+  mutate('Conditional R2 [95% CI]' = paste0(
+    sprintf("%.2f", Conditional_R2), " [",
+    sprintf("%.2f", Conditional_CI_low), ", ",
+    sprintf("%.2f", Conditional_CI_high), "]"
+  )) %>% 
+  select(c(Model, 'Marginal R2 [95% CI]', 'Conditional R2 [95% CI]'))
+
+# bind tables
+big_table <- bind_rows(table.prop.vig, table.look.cam, table.touch, table.tot.exp, table.exp.div, table.work.time, table.act.time, table.solve) %>% 
+  
+  # Rename fixed and random effects
+  mutate(Effect = recode(Effect,
+                         "fixed" = "Fixed",
+                         "ran_pars" = "Random")) %>% 
+  
+  # Add asterisk if CI does NOT overlap zero
+  mutate(Sig = ifelse(Conf.low > 0 | Conf.high < 0, "*", "")) %>%
+  
+  # Combine estimate and 95% CI
+  mutate('Estimate [95% HPD]' = paste0(
+    sprintf("%.2f", Estimate), " [",
+    sprintf("%.2f", Conf.low), ", ",
+    sprintf("%.2f", Conf.high), "]"
+  )) %>%
+  select(-Estimate, -Conf.low, -Conf.high) %>% 
+  
+  # Add R2 values
+  left_join(r2_table, by="Model")
+
+# Save model output
+# write.csv(big_table, "Model_Output/Q1-All-Attempts/Q1_results_table.csv")
+```

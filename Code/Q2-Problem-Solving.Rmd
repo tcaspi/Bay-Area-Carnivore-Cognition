@@ -1,0 +1,815 @@
+---
+title: "Q2-Problem-Solving"
+author: "Tali Caspi"
+date: "2025-08-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# load packages
+library(tidyverse); library(brms); library(DHARMa.helpers); library(ggridges); library(coda); library(ggpubr); library(bayestestR); library(purrr); library(ggrepel); library(performance); library(plot3D)
+
+# set colors
+colors <- c("#AF8566", "#B5C861", "#79ACBD", "#E4DECE","#ECBD95", "#0E075A")
+
+# Make custom theme
+theme_custom <- function() {
+  theme_classic()+
+  theme(panel.grid.minor = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        plot.background = element_rect(fill = "white", color = NA),
+        plot.title = element_text(size = 7),
+        strip.background = element_blank(),
+        axis.text.y = element_text(size=10, color="black"),
+        axis.text.x = element_text(size=10, color="black"),
+        axis.title.y = element_text(size=12, color="black"),
+        axis.title.x = element_text(size=12, color="black"))}
+```
+
+# Load and format data
+
+```{r}
+data_all <- read.csv("Data/Q1_Summary_All_DummyRows_Max_07282025.csv") %>% 
+  filter(Species != "Gray Fox" & Species != "Red Fox") %>%   # remove foxes
+  filter(Location != "Lake Chabot Dumpster") %>% # remove Lake Chabot
+  filter(Dummy != "dummy")
+  
+data_all.RT <- data_all %>% 
+  mutate(OffCamera = ifelse(WasSolveOffCamera == "Yes", "Yes", "No")) %>% # make column if animals was ever off camera
+  mutate(PropVigilantMax_RT = ifelse(PropVigilantMax_RT == 1, 0.999, PropVigilantMax_RT)) %>%  # change prop vigilant 1's to 0.999
+  mutate(LookAtCamera_RT = ifelse(LookAtCamera_RT == "Yes", 1, 0)) %>% # code Yes as 1 and No as 0
+  mutate(Touch_RT = ifelse(Touch_RT == "Yes", 1, 0)) %>%  # code Yes as 1 and No as 0
+  # separate raccoons into two groups
+  mutate(Species = case_when(
+    Species == "Raccoon" & Condition == "Alone" ~ "Raccoon.Alone",
+    Species == "Raccoon" & Condition == "Group" ~ "Raccoon.Group",
+    TRUE ~ Species))
+
+data_all.PS <- data_all.RT %>% 
+  filter(Solve_PS != "DidNotAttempt") # remove no attempts at solve
+```
+
+# Consider the effect of location
+
+Look at distribution of location data:
+
+```{r}
+table(table(data_all.PS$Location))
+
+summary_trials <- data_all.PS %>%
+  group_by(Location) %>%
+  summarise(n_trials = n(), n_solves = sum(Solve_PS_Binary), .groups="drop")
+
+hist(summary_trials$n_trials, main="Trials per location", xlab="Number of trials", breaks=c(seq(0,25,by=1)))
+
+table(summary_trials$n_solves) # 34 locations where the puzzle was never solved and 65 locations where the puzzle was eventually solved
+```
+
+-   Most sites have 1 or 2 observations and it decreases from there.
+
+-   Because of the testing design, each site can have a maximum of a single solve across all trails (because after a solve the testing ends).
+
+To better understand how the data structure influences the effect of location in statistical models, we created a simulated dataset where each location has a 50-50 chance of being solved and assign solve success randomly:
+
+```{r}
+set.seed(666)
+
+df_sim <- data_all.PS %>%
+  group_by(Location) %>%
+  mutate(solve_sim = 0) %>%  # initialize all 0
+  ungroup()
+
+locations <- unique(data_all.PS$Location)
+
+for(loc in locations){
+  loc_idx <- which(data_all.PS$Location == loc)
+  n_trials <- length(loc_idx)
+  
+  # 50/50 chance for the location to be "solved"
+  if(runif(1) < 0.5){
+    # pick one trial randomly to be the success
+    success_trial <- sample(1:n_trials, 1)
+    df_sim$solve_sim[loc_idx[success_trial]] <- 1
+  }
+  # else all trials remain 0
+}
+
+# check
+sim_trials <- df_sim %>%
+  group_by(Location) %>%
+  summarise(n_trials = n(),
+            n_solves = sum(solve_sim))
+
+sum(sim_trials$n_solves) # 53 locations solved in simulated data; similar to oberved results
+```
+
+Run models with location only as a random effect and compared the real vs. simulated data:
+
+```{r}
+# simulated location data
+mod_loc_sim <- brm(
+  solve_sim ~ 1 + (1 | Location),
+  family = bernoulli(link = "logit"),
+  data = df_sim,
+  cores = 4, chains = 4,
+  iter = 4000, warmup = 2000,
+  control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+# real location data
+mod_loc_real <- brm(
+  Solve_PS_Binary ~ 1 + (1 | Location),
+  family = bernoulli(link = "logit"),
+  data = df_sim,
+  cores = 4, chains = 4,
+  iter = 4000, warmup = 2000,
+  control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+# extract posterior
+posterior_real_df <- as_draws_df(mod_loc_real) %>%
+  select(sd_Location__Intercept) %>%
+  mutate(Source = "Real")
+
+posterior_sim_df <- as_draws_df(mod_loc_sim) %>%
+  select(sd_Location__Intercept) %>%
+  mutate(Source = "Simulated")
+
+posterior_combined <- bind_rows(posterior_real_df, posterior_sim_df)
+
+# plot posterior distribution for location effect in both models
+p.sim <- ggplot(posterior_combined, aes(x = sd_Location__Intercept, fill = Source)) +
+  geom_density(alpha = 0.5) +
+  labs(
+    x = "Posterior SD of Location",
+    y = "Density" ) +
+  theme_custom() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank())+
+  scale_fill_manual(values = c("Real" = "skyblue", "Simulated" = "orange"))
+
+p.sim
+
+# ggsave("Figures/p.sim.png", p.sim, dpi=600, height = 3, width = 5)
+```
+
+# Calculate behavioral scores
+
+Combine observed measures on behaviors associated with boldness, exploration, and effort into overall behavioral scores along these three axes at the species-level and at the within-species level for each trial.
+
+```{r}
+### CALCULATE MEANS AND SCORES FOR EACH SPECIES ###
+species_means <- data_all.PS %>%
+  group_by(Species) %>%
+  
+  # calculate proportion of solves for each species
+  mutate(
+    total.solves = sum(Solve_PS_Binary,na.rm=T),
+    total.attempts = n(),
+    p.Solve = total.solves/total.attempts) %>% 
+  
+  # raw means for each behavior for each species
+  summarize(
+    p.Solve = mean(p.Solve),
+    PropVigilant_mean = -mean(PropVigilantMax_RT), #invert
+    LookAtCamera_mean = -mean(LookAtCamera_RT), #invert
+    WorkTime_mean = mean(WorkTimeMax_PS),
+    TotalExploration_mean = mean(TotalExplorationMax_RT),
+    ExploratoryDiversity_mean = mean(ExploratoryDiversityMax_PS),
+    ActivityRate_mean = mean(ActivityRateMax_PS)
+  ) %>%
+  
+  # scaled and centered means for each behavior
+  mutate(
+    PropVigilant_mean_z = scale(PropVigilant_mean)[,1],
+    LookAtCamera_mean_z = scale(LookAtCamera_mean)[,1],
+    WorkTime_mean_z = scale(WorkTime_mean)[,1],
+    TotalExploration_mean_z = scale(TotalExploration_mean)[,1],
+    ExploratoryDiversity_mean_z = scale(ExploratoryDiversity_mean)[,1],
+    ActivityRate_mean_z = scale(ActivityRate_mean)[,1]) %>% 
+  
+  # calculate scores by averaging behavioral pairs and centering/scaling across species
+  mutate(
+    Boldness_mean_z = scale((PropVigilant_mean_z + LookAtCamera_mean_z) / 2)[,1],
+    Exploration_mean_z = scale((TotalExploration_mean_z + ExploratoryDiversity_mean_z) / 2)[,1],
+    Effort_mean_z = scale((WorkTime_mean_z + ActivityRate_mean_z) / 2)[,1]) 
+
+
+### CALCULATE OBSERVATION-LEVEL SCORES ###
+
+df_scores <- data_all.PS %>%
+  left_join(species_means, by = "Species") %>% # add species means to observation-level data
+  group_by(Species) %>%
+  
+  # Invert vigilance behaviors so higher = more bold
+  mutate(
+    PropVigilant_neg = -PropVigilantMax_RT,
+    LookAtCamera_neg = -LookAtCamera_RT) %>%
+  
+  # calculate within-species deviation from average (raw minus species mean)
+  mutate(
+    PropVigilant_within = PropVigilant_neg - PropVigilant_mean,
+    LookAtCamera_within  = LookAtCamera_neg - LookAtCamera_mean,
+    WorkTime_within = WorkTimeMax_PS - WorkTime_mean,
+    TotalExploration_within = TotalExplorationMax_RT - TotalExploration_mean,
+    ExploratoryDiversity_within = ExploratoryDiversityMax_PS - ExploratoryDiversity_mean,
+    ActivityRate_within = ActivityRateMax_PS - ActivityRate_mean,
+    TrialNumber_within = TrialNumber_PS - mean(TrialNumber_PS)) %>%
+  
+  # Scale/center within-species behavioral deviations so all observations are on the same scale
+  mutate(
+    PropVigilant_within_z = scale(PropVigilant_within)[,1],
+    LookAtCamera_within_z  = scale(LookAtCamera_within)[,1],
+    WorkTime_within_z  = scale(WorkTime_within)[,1],
+    TotalExploration_within_z  = scale(TotalExploration_within)[,1],
+    ExploratoryDiversity_within_z  = scale(ExploratoryDiversity_within)[,1],
+    ActivityRate_within_z  = scale(ActivityRate_within)[,1]) %>%
+  
+  # turn Nans back into zeros (where prop vig is always 0 and look at camera is always 0)
+  mutate(
+    PropVigilant_within_z = ifelse(is.nan(PropVigilant_within_z), 0, PropVigilant_within_z),
+    LookAtCamera_within_z  = ifelse(is.nan(LookAtCamera_within_z), 0, LookAtCamera_within_z)) %>% 
+  
+  # calculate behavioral scores for each observation
+  mutate(
+    Boldness_within_z  = scale((PropVigilant_within_z + LookAtCamera_within_z)/2)[,1],
+    Exploration_within_z  = scale((TotalExploration_within_z + ExploratoryDiversity_within_z)/2)[,1],
+    Effort_within_z  = scale((WorkTime_within_z + ActivityRate_within_z)/2)[,1]) %>%
+  
+  ungroup()
+```
+
+Construct table for mean behavioral scores per species:
+
+```{r}
+new_names <- c(
+  "Species",
+  "Boldness \n(Centered & Scaled)",
+  "Exploration \n(Centered & Scaled)",
+  "Effort \n(Centered & Scaled)")
+
+table.mean_scores <- species_means %>%
+  select(1, 15:17) %>% 
+  mutate(Species = gsub("\\.", " - ", Species)) %>% 
+  mutate(across(where(is.numeric), ~round(., 2))) %>%
+  rename_with(~new_names)
+
+# write.csv(table.mean_scores, "Model_Output/Q2-Problem-Solving/table_mean_scores.csv")
+```
+
+# Plot behavioral scores in 3D space
+
+```{r}
+png("Figures/4D_fig.png", width = 5, height = 5, units = "in", res = 600)
+
+scatter3D(
+  x = species_means$Boldness_mean_z,#boldness
+  y = species_means$Exploration_mean_z, #exploration
+  z = species_means$Effort_mean_z,
+  colvar = species_means$p.Solve,
+  col = ramp.col(c("#D3D3D3", "#006400")),
+  pch = 19,
+  cex = 2,
+  clim = c(0, 1), # fixes color scale from 0 to 1
+  colkey = list(side = 1, length = 0.5),
+  theta = 60,
+  phi = 40, # could try 40
+  bty = "g",
+  d = 2,
+  xlab = "Boldness",
+  ylab = "Exploration",
+  zlab = "Effort",
+  cex.lab = 0.6    # size of axis labels
+)
+
+dev.off()
+
+# optional overlay the text
+text3D(
+  x = species_means$Boldness_mean_z,
+  y = species_means$Exploration_mean_z,
+  z = species_means$Effort_mean_z,
+  labels = species_means$Species,
+  add = T,   # <- overlay on top of existing scatter3D plot
+  cex = 0.5,
+  pch = 19,
+  cex = 2,
+  clim = c(0, 1), # fixes color scale from 0 to 1
+  colkey = list(side = 1, length = 0.5),
+  theta = 60,
+  phi = 20,
+  bty = "g",
+  d = 2)
+```
+
+# Set Prior
+
+```{r}
+# set priors
+priors <- c(
+  prior(normal(0, 2), class = "b"), # or 0,2
+  prior(normal(0, 3), class = "Intercept"),# or 0,3
+  prior(exponential(1), class = "sd"))
+
+priors.null <- c(
+  prior(normal(0, 3), class = "Intercept"),
+  prior(exponential(1), class = "sd"))
+
+```
+
+# Construct Models
+
+```{r}
+# construct models
+set.seed(123)
+
+mod.boldness <- brm( # boldness
+   Solve_PS_Binary ~ TrialNumber_within +
+     Boldness_within_z +
+     Boldness_mean_z +
+     (1 + TrialNumber_within + Boldness_within_z || Species),
+   family = bernoulli(link = "logit"),
+   data = df_scores,
+   prior = priors,
+   cores = 4, chains = 4,
+   iter = 4000, warmup = 2000,
+   control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+mod.exploration <- brm( # exploration
+   Solve_PS_Binary ~ TrialNumber_within +
+     Exploration_within_z +
+     Exploration_mean_z +
+     (1 + TrialNumber_within + Exploration_within_z || Species),
+   family = bernoulli(link = "logit"),
+   data = df_scores,
+   prior = priors,
+   cores = 4, chains = 4,
+   iter = 4000, warmup = 2000,
+   control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+mod.effort <- brm( # effort
+   Solve_PS_Binary ~ TrialNumber_within +
+     Effort_within_z +
+     Effort_mean_z +
+     (1 + TrialNumber_within + Effort_within_z || Species),
+   family = bernoulli(link = "logit"),
+   data = df_scores,
+   prior = priors,
+   cores = 4, chains = 4,
+   iter = 4000, warmup = 2000,
+   control = list(adapt_delta = 0.99, max_treedepth = 15))
+
+# save model output
+saveRDS(mod.boldness, "Model_Output/Q2-Problem-Solving/mod.boldness.rds")
+saveRDS(mod.exploration, "Model_Output/Q2-Problem-Solving/mod.exploration.rds")
+saveRDS(mod.effort, "Model_Output/Q2-Problem-Solving/mod.effort.rds")
+
+# posterior predictive checks
+pp_check(mod.boldness, ndraws=100)
+pp_check(mod.exploration, ndraws=100)
+pp_check(mod.effort, ndraws=100)
+
+# dharma
+dh_check_brms(mod.boldness)
+dh_check_brms(mod.exploration)
+dh_check_brms(mod.effort)
+```
+
+# Load Model Output
+
+To save time, model output (.rds files) can be downloaded and loaded:
+
+```{r}
+# load model output
+mod.boldness <- readRDS("Model_Output/Q2-Problem-Solving/mod.boldness.rds")
+mod.exploration <- readRDS("Model_Output/Q2-Problem-Solving/mod.exploration.rds")
+mod.effort <- readRDS("Model_Output/Q2-Problem-Solving/mod.effort.rds")
+```
+
+# Extract Model Results
+
+```{r}
+# Extract tables for each model
+table.boldness <- broom.mixed::tidy(mod.boldness, conf.method="HPDinterval") %>% 
+  mutate(term = c('Intercept', 'Trial Number (Within-Species)', 'Boldness (Within-Species)', 'Mean Boldness (Among-Species)', '\u03C3Intercept', '\u03C3Trial Number (Within-Species)', '\u03C3Boldness (Within-Species)')) %>% 
+  rename_all(str_to_title) %>% 
+  select(-c(Component, Group, Std.error)) %>% 
+  mutate(Model = 'Boldness') %>% 
+  relocate(Model)
+
+table.exploration <- broom.mixed::tidy(mod.exploration, conf.method="HPDinterval") %>% 
+  mutate(term = c('Intercept', 'Trial Number (Within-Species)', 'Exploration (Within-Species)', 'Mean Exploration (Among-Species)', '\u03C3Intercept', '\u03C3Trial Number (Within-Species)', '\u03C3Exploration (Within-Species)')) %>% 
+  rename_all(str_to_title) %>% 
+  select(-c(Component, Group, Std.error)) %>% 
+  mutate(Model = 'Exploration') %>% 
+  relocate(Model)
+
+table.effort <- broom.mixed::tidy(mod.effort, conf.method="HPDinterval") %>% 
+  mutate(term = c('Intercept', 'Trial Number (Within-Species)', 'Effort (Within-Species)', 'Mean Effort (Among-Species)', '\u03C3Intercept', '\u03C3Trial Number (Within-Species)', '\u03C3Effort (Within-Species)')) %>% 
+  rename_all(str_to_title) %>% 
+  select(-c(Component, Group, Std.error)) %>% 
+  mutate(Model = 'Effort') %>% 
+  relocate(Model)
+
+# Calculate R2 values
+r2_boldness <- performance::r2_bayes(mod.boldness)
+r2_exploration <- performance::r2_bayes(mod.exploration)
+r2_effort <- performance::r2_bayes(mod.effort)
+
+# Store in a list
+r2_list <- list(
+  'Boldness' = r2_boldness,
+  'Exploration' = r2_exploration,
+  'Effort' = r2_effort)
+
+r2_table <- data.frame(
+  Model = names(r2_list),
+  Marginal_R2 = sapply(r2_list, function(x) x$R2_Bayes_marginal),
+  Conditional_R2 = sapply(r2_list, function(x) x$R2_Bayes),
+  Marginal_CI_low = sapply(r2_list, function(x) attr(x, "CI")$R2_Bayes_marginal$CI_low),
+  Marginal_CI_high = sapply(r2_list, function(x) attr(x, "CI")$R2_Bayes_marginal$CI_high),
+  Conditional_CI_low = sapply(r2_list, function(x) attr(x, "CI")$R2_Bayes$CI_low),
+  Conditional_CI_high = sapply(r2_list, function(x) attr(x, "CI")$R2_Bayes$CI_high)) %>% 
+  mutate('Marginal R2 [95% CI]' = paste0(
+    sprintf("%.2f", Marginal_R2), " [",
+    sprintf("%.2f", Marginal_CI_low), ", ",
+    sprintf("%.2f", Marginal_CI_high), "]"
+  )) %>% 
+  mutate('Conditional R2 [95% CI]' = paste0(
+    sprintf("%.2f", Conditional_R2), " [",
+    sprintf("%.2f", Conditional_CI_low), ", ",
+    sprintf("%.2f", Conditional_CI_high), "]"
+  )) %>% 
+  select(c(Model, 'Marginal R2 [95% CI]', 'Conditional R2 [95% CI]'))
+
+# bind tables
+full_table <- bind_rows(table.boldness, table.exploration, table.effort) %>% 
+  
+  # Rename fixed and random effects
+  mutate(Effect = recode(Effect,
+                         "fixed" = "Fixed",
+                         "ran_pars" = "Random")) %>% 
+  
+  # Add asterisk if CI does NOT overlap zero
+  mutate(Sig = ifelse(Conf.low > 0 | Conf.high < 0, "*", "")) %>%
+  
+  # Combine estimate and 95% HPD
+  mutate('Estimate [95% HPD]' = paste0(
+    sprintf("%.2f", Estimate), " [",
+    sprintf("%.2f", Conf.low), ", ",
+    sprintf("%.2f", Conf.high), "]"
+  )) %>%
+  select(-Estimate, -Conf.low, -Conf.high) %>% 
+  
+  # Add R2 values
+  left_join(r2_table, by="Model")
+
+# Save model output
+# write.csv(full_table, "Model_Output/Q2-Problem-Solving/randomslopes_results_table.csv")
+```
+
+# Plot Between-Species Effects
+
+Are species that are bolder, more explorative, or more persistent more likely to solve the puzzle?
+
+First, pull out effect estimates to assess significance of mean terms:
+
+```{r}
+# model list
+models_list <- list(
+  mod.boldness = mod.boldness,
+  mod.exploration = mod.exploration,
+  mod.effort = mod.effort)
+
+# define terms
+mean_terms <- c(
+  Boldness = "Boldness_mean_z",
+  Exploration = "Exploration_mean_z",
+  Effort = "Effort_mean_z")
+
+# Calculate species-specific slopes
+mean_terms_extract <- map2_dfr(models_list, mean_terms, ~ {
+  
+  draws <- as_draws_df(.x)
+  pop_slope <- draws[[paste0("b_", .y)]]
+  
+  # Convert to mcmc for HPDinterval
+  mcmc_slope <- as.mcmc(pop_slope)
+  
+  # Calculate HPD intervals at two CI levels
+  hpd_90 <- HPDinterval(mcmc_slope, prob = 0.90)
+  hpd_95 <- HPDinterval(mcmc_slope, prob = 0.95)
+  
+  # Extract lower and upper columns explicitly
+  lower_90 <- hpd_90[,"lower"]
+  upper_90 <- hpd_90[,"upper"]
+  lower_95 <- hpd_95[,"lower"]
+  upper_95 <- hpd_95[,"upper"]
+  
+  bind_rows(
+    tibble(
+      Behavior = .y,
+      CI = "90%",
+      LogOddsMean = mean(pop_slope),
+      LogOddsLower = lower_90,
+      LogOddsUpper = upper_90
+    ),
+    tibble(
+      Behavior = .y,
+      CI = "95%",
+      LogOddsMean = mean(pop_slope),
+      LogOddsLower = lower_95,
+      LogOddsUpper = upper_95
+    )
+  ) %>% 
+    mutate(Significant = (LogOddsLower > 0) | (LogOddsUpper < 0))
+})
+
+mean_terms_extract
+```
+
+Now, plot probability curves with raw data
+
+```{r}
+# Write plotting function
+plot_between_species <- function(mod, predictor_mean_z, prob,
+                                    xlab, sig) {
+  
+  # get conditional effects for the predictor
+  ce <- conditional_effects(mod, effects = predictor_mean_z, prob = prob)
+  ce_data <- ce[[predictor_mean_z]]
+  
+  # manually set linetype
+  lt <- if (sig) "solid" else "dashed"
+  
+  # create modified labels
+  species_means <- species_means %>%
+    mutate(Species_label = str_replace_all(Species, "\\.", " - "))
+  
+  # plot
+  ggplot(ce_data, aes(x = effect1__, y = estimate__)) +
+    geom_line(size = 1, color = "deepskyblue4", linetype=lt) +
+    geom_ribbon(aes(ymin = lower__, ymax = upper__), alpha = 0.2, fill = "deepskyblue4") +
+    geom_point(data = species_means, aes(x = species_means[[predictor_mean_z]], y = p.Solve), color = "black", alpha = 0.8) +
+    geom_text_repel(data = species_means,
+                    aes(x = species_means[[predictor_mean_z]], y = p.Solve, 
+                        label = species_means$Species_label),size = 3, max.overlaps = 10) +
+    labs(x = xlab, y = "Predicted Probability of Solving") +
+    xlim(c(-2,2))+ylim(0,1)+
+    scale_linetype_manual(values = c("sig" = "solid", "ns" = "dashed"))+
+    theme_classic()
+}
+
+# Plot
+p.boldness <- plot_between_species(
+  mod = mod.boldness,
+  predictor_mean_z = "Boldness_mean_z",
+  prob = 0.95,
+  xlab = "Mean Boldness (Centered & Scaled)",
+  sig=F)
+
+p.exploration <- plot_between_species(
+  mod = mod.exploration,
+  predictor_mean_z = "Exploration_mean_z",
+  prob = 0.95,
+  xlab = "Mean Exploration (Centered & Scaled)",
+  sig = F)
+
+p.effort <- plot_between_species(
+  mod = mod.effort,
+  predictor_mean_z = "Effort_mean_z",
+  prob = 0.95,
+  xlab = "Mean Effort (Centered & Scaled)",
+  sig = T)
+
+# Arrange plots without y-axis labels
+p.prob.curves <- ggarrange(p.boldness, 
+                           p.exploration+theme(axis.title.y = element_blank()), 
+                           p.effort+theme(axis.title.y = element_blank()),
+                           ncol = 3, nrow = 1, align = "hv")
+
+p.prob.curves
+
+# ggsave("Figures/prob_curves_among_species.png", dpi=600, width=11, height=3)
+```
+
+# Plot Within-Species Effects
+
+Within species, when a subject in a trial is bolder, more exploratory, or exerts more effort than average (for its specices), does that increase solve success?
+
+```{r}
+# model list
+models_list <- list(
+  mod.boldness = mod.boldness,
+  mod.exploration = mod.exploration,
+  mod.effort = mod.effort)
+
+# define slope terms
+slope_terms <- c(
+  Boldness = "Boldness_within_z",
+  Exploration = "Exploration_within_z",
+  Effort = "Effort_within_z")
+
+# Calculate species-specific slopes
+species_slopes <- map2_dfr(models_list, slope_terms, ~ {
+  
+  draws <- as_draws_df(.x)
+  species <- unique(.x$data$Species)
+  pop_slope <- draws[[paste0("b_", .y)]]
+  
+  map_dfr(species, function(sp) {
+    sp_dot <- gsub(" ", ".", sp)  # Replace spaces with dots for posterior column name
+    
+    term <- paste0("r_Species[", sp_dot, ",", .y, "]")
+    if (!term %in% colnames(draws)) return(tibble())
+    
+    # Add species effect to population slope
+    slope_draws <- round(pop_slope + draws[[term]],3)
+    
+    # Calculate HPD intervals at two CI levels
+    hpd_90 <- round(HPDinterval(as.mcmc(slope_draws), prob = 0.90),3)
+    hpd_95 <- round(HPDinterval(as.mcmc(slope_draws), prob = 0.95),3)
+    
+    # Combine into a tibble with a 'CI' column
+    bind_rows(
+      tibble(
+        Behavior = .y,
+        Species = sp,   # keep original species name with spaces for labeling
+        CI = "90%",
+        LogOddsMean = mean(slope_draws),
+        LogOddsLower = hpd_90[1],
+        LogOddsUpper = hpd_90[2],
+        OddsRatioMean = exp(mean(slope_draws))
+      ),
+      tibble(
+        Behavior = .y,
+        Species = sp,
+        CI = "95%",
+        LogOddsMean = mean(slope_draws),
+        LogOddsLower = hpd_95[1],
+        LogOddsUpper = hpd_95[2],
+        OddsRatioMean = exp(mean(slope_draws))
+      )
+    ) %>% 
+      mutate(
+        Significant = (LogOddsLower > 0) | (LogOddsUpper < 0),
+        Behavior_Species = factor(paste(Behavior, Species, sep = " - "))
+      )
+  })
+})
+
+```
+
+Plot within-species effects of boldness, exploration, and effort:
+
+```{r}
+ggplot(species_slopes, aes(x = LogOddsMean, y = fct_rev(Behavior_Species), color = Species)) +
+  
+  # Line at 0  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+    
+  # 95% HPD lines
+    geom_linerange(
+        data = filter(species_slopes, CI == "95%"),
+        aes(xmin = LogOddsLower, xmax = LogOddsUpper, y = fct_rev(Behavior_Species)),
+        alpha = 0.5, size = 1) +
+    
+  # 90% HPD lind
+    geom_linerange(
+        data = filter(species_slopes, CI == "90%"),
+        aes(xmin = LogOddsLower, xmax = LogOddsUpper, y = fct_rev(Behavior_Species)),
+        alpha = 1, size = 1) +
+  
+  # Posterior means
+    geom_point(aes(shape = Significant), size = 3, show.legend = c(shape = FALSE, color = TRUE)) +
+    scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1)) +
+    scale_color_manual(values = colors, 
+                       labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
+                                  "Raccoon - Group", "Skunk"),
+                       guide = guide_legend(override.aes = list(shape = 16, size = 4, linetype=0))) +
+    
+  # Facet by behavior
+    facet_wrap(~ Behavior, scales = "free_y", ncol = 1,
+               labeller = labeller(Behavior = c(
+             "Boldness_within_z" = "Boldness\n(Within-Species Centered)",
+             "Exploration_within_z" = "Exploration\n(Within-Species Centered)",
+             "Effort_within_z"   = "Effort\n(Within-Species Centered)"
+           ))) +
+  
+  # Graphics
+    scale_x_continuous(limits=c(-2,2), breaks = c(-3, -2, -1, 0, 1, 2, 3)) +
+    labs(x = "Slope Estimate (Log-Odds Scale)", y = NULL, color = NULL) +
+    theme_classic() +
+    theme(
+        legend.position = "bottom",
+        strip.background = element_blank(),
+        strip.text = element_text(size = 8, face = "bold"),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line.y = element_blank(),
+        panel.grid.minor.y = element_blank())
+
+# ggsave("Figures/randomslopes.png", dpi=600, width=4, height=6)
+```
+
+Plot within-species effects of trial number:
+
+```{r}
+# Calculate species-specific slopes for TrialNumber_wc only across all models
+trial_slopes <- map2_dfr(models_list, names(models_list), function(model, model_name) {
+  
+  draws <- as_draws_df(model)
+  species <- unique(model$data$Species)
+  pop_slope <- draws[["b_TrialNumber_within"]]
+  
+  map_dfr(species, function(sp) {
+    sp_dot <- gsub(" ", ".", sp)
+    
+    term <- paste0("r_Species[", sp_dot, ",TrialNumber_within]")
+    if (!term %in% colnames(draws)) return(tibble())
+    
+    slope_draws <- pop_slope + draws[[term]]
+    
+    hpd_90 <- HPDinterval(as.mcmc(slope_draws), prob = 0.90)
+    hpd_95 <- HPDinterval(as.mcmc(slope_draws), prob = 0.95)
+    
+    bind_rows(
+      tibble(
+        Model = model_name,
+        Species = sp,
+        CI = "90%",
+        LogOddsMean = mean(slope_draws),
+        LogOddsLower = hpd_90[1],
+        LogOddsUpper = hpd_90[2]
+      ),
+      tibble(
+        Model = model_name,
+        Species = sp,
+        CI = "95%",
+        LogOddsMean = mean(slope_draws),
+        LogOddsLower = hpd_95[1],
+        LogOddsUpper = hpd_95[2]
+      )
+    ) %>%
+      mutate(
+        Significant = (LogOddsLower > 0) | (LogOddsUpper < 0)
+      )
+  })
+})
+
+trial_slopes <- trial_slopes %>%
+  arrange(Model, Species) %>%
+  mutate(Model_Species = factor(paste(Model, Species, sep = " - ")))
+
+# Plot Odds
+p.trialnum <- ggplot(trial_slopes, aes(x = LogOddsMean, y = fct_rev(Model_Species), color = Species)) +
+  
+  # Line at 0  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+    
+  # 95% HPD lines
+    geom_linerange(
+        data = filter(trial_slopes, CI == "95%"),
+        aes(xmin = LogOddsLower, xmax = LogOddsUpper, y = fct_rev(Model_Species)),
+        alpha = 0.5, size = 1) +
+    
+  # 90% HPD lind
+    geom_linerange(
+        data = filter(trial_slopes, CI == "90%"),
+        aes(xmin = LogOddsLower, xmax = LogOddsUpper, y = fct_rev(Model_Species)),
+        alpha = 1, size = 1) +
+  
+  # Posterior means
+    geom_point(aes(shape = Significant), size = 3, show.legend = c(shape = FALSE, color = TRUE)) +
+    scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1)) +
+    scale_color_manual(values = colors,
+                       labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
+                                  "Raccoon - Group", "Skunk"),
+                       guide = guide_legend(override.aes = list(shape = 16, size = 4, linetype=0))) +
+    
+  # Facet by behavior
+    facet_wrap(~ Model, scales = "free_y", ncol = 1,
+               labeller = labeller(Model = c(
+             "mod.boldness" = "Boldness Model",
+             "mod.effort" = "Exploration Model",
+             "mod.exploration"   = "Effort Model"
+           ))) +
+  
+  # Graphics
+    scale_x_continuous(limits=c(-2,2), breaks = c(-3, -2, -1, 0, 1, 2, 3))+
+    labs(x = "Slope Estimate for Trial Number (Log-Odds Scale)", y = NULL, color = NULL) +
+    
+    theme_classic() +
+    theme(
+        legend.position = "bottom",
+        strip.background = element_blank(),
+        strip.text = element_text(size = 8, face = "bold"),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line.y = element_blank(),
+        panel.grid.minor.y = element_blank())
+
+p.trialnum
+
+# ggsave("Figures/trialnumber.png", dpi=600, width=4, height=6)
+```
