@@ -88,20 +88,29 @@ In the `Q1-All-Attempts` folder:
 
 In the `Q1-First-Attempts` folder:
 
-| `mod.prop.vig.rds`: random-intercept model for proportion of time spent vigilant by the subject using only first attempt trials
-| `mod.look.cam.rds`: random-intercept model for whether the subject looked at the camera using only first attempt trials
-| `mod.touch.rds`: random-intercept model for whether the subject touched the puzzle using only first attempt trials
-| `mod.tot.exp.rds`: random-intercept model for total exploration exhibited by the subject using only first attempt trials
-| `mod.exp.div.rds`: random-intercept model for exploratory diversity exhibited by the subject using only first attempt trials
-| `mod.work.time.rds`: random-intercept model for total work time of the subject using only first attempt trials
-| `mod.act.rate.rds`: random-intercept model for activity rate of the subject using only first attempt trials
-| `mod.solve.rds`: random-intercept model for whether the subject solved the puzzle using only first attempt trials
+> `mod.prop.vig.rds`: random-intercept model for proportion of time spent vigilant by the subject using only first attempt trials
+>
+> `mod.look.cam.rds`: random-intercept model for whether the subject looked at the camera using only first attempt trials
+>
+> `mod.touch.rds`: random-intercept model for whether the subject touched the puzzle using only first attempt trials
+>
+> `mod.tot.exp.rds`: random-intercept model for total exploration exhibited by the subject using only first attempt trials
+>
+> `mod.exp.div.rds`: random-intercept model for exploratory diversity exhibited by the subject using only first attempt trials
+>
+> `mod.work.time.rds`: random-intercept model for total work time of the subject using only first attempt trials
+>
+> `mod.act.rate.rds`: random-intercept model for activity rate of the subject using only first attempt trials
+>
+> `mod.solve.rds`: random-intercept model for whether the subject solved the puzzle using only first attempt trials
 
 In the `Q2-Problem-Solving` folder:
 
-| `mod.boldness.rds`: random-slope model for effect of boldness on problem-solving success
-| `mod.exploration.rds`: random-slope model for effect of exploration on problem-solving success
-| `mod.effort.rds`: random-slope model for effect of effort on problem-solving success
+> `mod.boldness.rds`: random-slope model for effect of boldness on problem-solving success
+>
+> `mod.exploration.rds`: random-slope model for effect of exploration on problem-solving success
+>
+> `mod.effort.rds`: random-slope model for effect of effort on problem-solving success
 
 ## Figures
 
