@@ -70,14 +70,21 @@ The output of the models are not stored on GitHub in the `Model_Output` folder
 
 In the `Q1-All-Attempts` folder:
 
-| `mod.prop.vig.all.rds`: random-intercept model for proportion of time spent vigilant by the subject using all trials
-| `mod.look.cam.all.rds`: random-intercept model for whether the subject looked at the camera using all trials
-| `mod.touch.all.rds`: random-intercept model for whether the subject touched the puzzle using all trials
-| `mod.tot.exp.all.rds`: random-intercept model for total exploration exhibited by the subject using all trials
-| `mod.exp.div.all.rds`: random-intercept model for exploratory diversity exhibited by the subject using all trials
-| `mod.work.time.all.rds`: random-intercept model for total work time of the subject using all trials
-| `mod.act.rate.all.rds`: random-intercept model for activity rate of the subject using all trials
-| `mod.solve.all.rds`: random-intercept model for whether the subject solved the puzzle using all trials
+> `mod.prop.vig.all.rds`: random-intercept model for proportion of time spent vigilant by the subject using all trials
+>
+> `mod.look.cam.all.rds`: random-intercept model for whether the subject looked at the camera using all trials
+>
+> `mod.touch.all.rds`: random-intercept model for whether the subject touched the puzzle using all trials
+>
+> `mod.tot.exp.all.rds`: random-intercept model for total exploration exhibited by the subject using all trials
+>
+> `mod.exp.div.all.rds`: random-intercept model for exploratory diversity exhibited by the subject using all trials
+>
+> `mod.work.time.all.rds`: random-intercept model for total work time of the subject using all trials
+>
+> `mod.act.rate.all.rds`: random-intercept model for activity rate of the subject using all trials
+>
+> `mod.solve.all.rds`: random-intercept model for whether the subject solved the puzzle using all trials
 
 In the `Q1-First-Attempts` folder:
 
