@@ -64,6 +64,8 @@ The scripts for the full workflow are available as Rmd files in the `Code` fol
 
 `Q2-Problem-Solving.Rmd`: this script uses the *brms* package to construct random-slope models to assess within-species and among-species effects of boldness, exploration, and effort on problem-solving success. The script also runs a simulation analysis to validate excluding testing location as a random effect from models; generates composite behavioral scores for boldness, exploration, effort from raw observational data; and generates figures and a summary table of model output.
 
+`Study_Map.Rmd`: the scripts makes a map of puzzle locations in the San Francisco Bay Area.
+
 ## Model Output
 
 The output of the models are not stored on GitHub in the `Model_Output` folder, but can be generated on your own device, or are available to download on Dryad Digital Repository (DOI: XXX). The `.rds` files that can be downloaded from Dryad are described below.

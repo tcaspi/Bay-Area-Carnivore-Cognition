@@ -35,7 +35,7 @@ theme_custom <- function() {
 data_all <- read.csv("Data/Q1_Summary_All_DummyRows_Max_07282025.csv") %>% 
   filter(Species != "Gray Fox" & Species != "Red Fox") %>%   # remove foxes
   filter(Location != "Lake Chabot Dumpster") %>% # remove Lake Chabot
-  filter(Dummy != "dummy") # remove trials with no recorded data
+  filter(is.na(Dummy)) # remove trials with no recorded data
   
 data_all.RT <- data_all %>% 
   mutate(OffCamera = ifelse(WasSolveOffCamera == "Yes", "Yes", "No")) %>% # make column if animals was ever off camera
