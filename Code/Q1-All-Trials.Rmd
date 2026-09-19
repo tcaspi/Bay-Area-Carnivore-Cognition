@@ -194,12 +194,6 @@ saveRDS(mod.prop.vig.all, "Model_Output/Q1-All-Attempts/mod.prop.vig.all.rds")
 saveRDS(mod.look.cam.all, "Model_Output/Q1-All-Attempts/mod.look.cam.all.rds")
 saveRDS(mod.touch.all, "Model_Output/Q1-All-Attempts/mod.touch.all.rds")
 saveRDS(mod.tot.exp.all, "Model_Output/Q1-All-Attempts/mod.tot.exp.all.rds")
-
-# Load models
-mod.prop.vig.all <- readRDS("Model_Output/Q1-All-Attempts/mod.prop.vig.all.rds")
-mod.look.cam.all <- readRDS("Model_Output/Q1-All-Attempts/mod.look.cam.all.rds")
-mod.touch.all <- readRDS("Model_Output/Q1-All-Attempts/mod.touch.all.rds")
-mod.tot.exp.all <- readRDS("Model_Output/Q1-All-Attempts/mod.tot.exp.all.rds")
 ```
 
 ### Problem-solving models
@@ -363,8 +357,6 @@ p.vigilance <- ggplot(posterior_plotting, aes(y = Species, x = mean_prob, color 
   theme(legend.position = "none")
 
 p.vigilance
-
-ggsave("Figures/temp2.png", dpi=600, height=2.5, width=5)
 ```
 
 ### Look at Camera
