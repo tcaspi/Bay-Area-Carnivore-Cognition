@@ -31,7 +31,7 @@ theme_custom <- function() {
 # Load and format data
 
 ```{r}
-data_all <- read.csv("Data/Q1_Summary_All_DummyRows_Max_07282025.csv") %>% 
+data_all <- read.csv("Data/Q1_Summary_All_DummyRows_Max_07282025_Anonymized.csv") %>% 
   filter(Species != "Gray Fox" & Species != "Red Fox") %>%   # remove foxes
   filter(Location != "Lake Chabot Dumpster") %>% # remove Lake Chabot
   filter(is.na(Dummy))

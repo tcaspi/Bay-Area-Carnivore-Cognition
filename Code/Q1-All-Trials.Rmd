@@ -32,7 +32,7 @@ theme_custom <- function() {
 # Load and Format data
 
 ```{r}
-data_all <- read.csv("Data/Q1_Summary_All_DummyRows_Max_07282025.csv") %>% 
+data_all <- read.csv("Data/Q1_Summary_All_DummyRows_Max_07282025_Anonymized.csv") %>% 
   filter(Species != "Gray Fox" & Species != "Red Fox") %>%   # remove foxes
   filter(Location != "Lake Chabot Dumpster") %>% # remove Lake Chabot
   filter(is.na(Dummy)) # remove trials with no recorded data
@@ -263,7 +263,7 @@ saveRDS(mod.solve.all, "Model_Output/Q1-All-Attempts/mod.solve.all.rds")
 
 ## Load Models
 
-If not re-running model, load all model output:
+If not re-running models, load all model output:
 
 ```{r}
 # Load models
@@ -345,12 +345,13 @@ posterior_plotting <- posterior_combined %>%
   ungroup()
 
 p.vigilance <- ggplot(posterior_plotting, aes(y = Species, x = mean_prob, color = Species, fill=Species)) +
-  # 95% interval (transparent)
-  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
-  # 90% interval (solid)
-  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # 95% interval
+   geom_errorbarh(aes(xmin = lower_95, xmax = upper_95),
+                 height = 0.1, size = 0.5) +
+  # 90% interval
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 5) +
   # Mean point
-  geom_point(shape = 124, size = 4, color = "black") +
+  geom_point(shape = 16, size = 1, color = "white") +
   scale_x_continuous(limits = c(0, 1),
                      expand = expansion(mult = c(0.02, 0.02))) +
   scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
@@ -362,6 +363,8 @@ p.vigilance <- ggplot(posterior_plotting, aes(y = Species, x = mean_prob, color 
   theme(legend.position = "none")
 
 p.vigilance
+
+ggsave("Figures/temp2.png", dpi=600, height=2.5, width=5)
 ```
 
 ### Look at Camera
@@ -406,12 +409,13 @@ posterior_plotting <- posterior_species %>%
 
 # Plot
 p.look.cam <- ggplot(posterior_plotting, aes(y = Species, x = mean_prob, color = Species, fill=Species)) +
-  # 95% interval (transparent)
-  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
-  # 90% interval (solid)
-  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # 95% interval 
+  geom_errorbarh(aes(xmin = lower_95, xmax = upper_95),
+                 height = 0.1, size = 0.5) +
+  # 90% interval
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size =5) +
   # Mean point
-  geom_point(shape = 124, size = 4, color = "black") +
+  geom_point(shape = 16, size = 1, color = "white") +
   scale_x_continuous(limits = c(0, 1),
                      expand = expansion(mult = c(0.02, 0.02))) +
   scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
@@ -464,12 +468,13 @@ posterior_plotting <- posterior_species %>%
 
 # Plot
 p.touch.puz <- ggplot(posterior_plotting, aes(y = Species, x = mean_prob, color = Species, fill=Species)) +
-  # 95% interval (transparent)
-  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
-  # 90% interval (solid)
-  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # 95% interval 
+  geom_errorbarh(aes(xmin = lower_95, xmax = upper_95),
+                 height = 0.1, size = 0.5) +
+  # 90% interval
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size =5) +
   # Mean point
-  geom_point(shape = 124, size = 4, color = "black") +
+  geom_point(shape = 16, size = 1, color = "white") +
   scale_x_continuous(limits = c(0, 1),
                      expand = expansion(mult = c(0.02, 0.02))) +
   scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
@@ -523,12 +528,13 @@ posterior_plotting <- posterior_species %>%
 
 # Plot
 p.tot.exp <- ggplot(posterior_plotting, aes(y = Species, x = mean_mu, color = Species, fill=Species)) +
-  # 95% interval (transparent)
-  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
-  # 90% interval (solid)
-  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # 95% interval 
+  geom_errorbarh(aes(xmin = lower_95, xmax = upper_95),
+                 height = 0.1, size = 0.5) +
+  # 90% interval
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size =5) +
   # Mean point
-  geom_point(shape = 124, size = 4, color = "black") +
+  geom_point(shape = 16, size = 1, color = "white") +
   scale_x_continuous(limits = c(0, 21),
                      expand = expansion(mult = c(0.02, 0.02))) +
   scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
@@ -584,12 +590,13 @@ posterior_plotting <- posterior_species %>%
 
 # Plot
 p.exp.div <- ggplot(posterior_plotting, aes(y = Species, x = mean_mu, color = Species, fill=Species)) +
-  # 95% interval (transparent)
-  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
-  # 90% interval (solid)
-  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+ # 95% interval 
+  geom_errorbarh(aes(xmin = lower_95, xmax = upper_95),
+                 height = 0.1, size = 0.5) +
+  # 90% interval
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size =5) +
   # Mean point
-  geom_point(shape = 124, size = 4, color = "black") +
+  geom_point(shape = 16, size = 1, color = "white") +
   scale_x_continuous(limits = c(0, 6.5),
                      expand = expansion(mult = c(0.02, 0.02))) +
   scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
@@ -641,12 +648,13 @@ posterior_plotting <- posterior_species %>%
 
 # Plot
 p.work.time <- ggplot(posterior_plotting, aes(y = Species, x = mean_mu, color = Species, fill=Species)) +
-  # 95% interval (transparent)
-  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
-  # 90% interval (solid)
-  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # 95% interval 
+  geom_errorbarh(aes(xmin = lower_95, xmax = upper_95),
+                 height = 0.1, size = 0.5) +
+  # 90% interval
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size =5) +
   # Mean point
-  geom_point(shape = 124, size = 4, color = "black") +
+  geom_point(shape = 16, size = 1, color = "white") +
   scale_x_continuous(limits = c(0, 75),
                      expand = expansion(mult = c(0.02, 0.02))) +
   scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
@@ -660,7 +668,7 @@ p.work.time <- ggplot(posterior_plotting, aes(y = Species, x = mean_mu, color = 
 p.work.time
 ```
 
-### Activity rate
+### Persistence
 
 ```{r}
 # Extract posterior samples
@@ -698,17 +706,18 @@ posterior_plotting <- posterior_species %>%
 
 # 6. Plot ridge plot with mean expected counts points
 p.act.time <- ggplot(posterior_plotting, aes(y = Species, x = mean_mu, color = Species, fill=Species)) +
-  # 95% interval (transparent)
-  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
-  # 90% interval (solid)
-  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+ # 95% interval 
+  geom_errorbarh(aes(xmin = lower_95, xmax = upper_95),
+                 height = 0.1, size = 0.5) +
+  # 90% interval
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size =5) +
   # Mean point
-  geom_point(shape = 124, size = 4, color = "black") +
+  geom_point(shape = 16, size = 1, color = "white") +
   scale_x_continuous(limits = c(0, 1.5),
                      expand = expansion(mult = c(0.02, 0.02))) +
   scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
                               "Raccoon - Group", "Skunk"))+
-  labs(x = "Predicted Activity Rate",
+  labs(x = "Predicted Persistence",
        y = NULL) +
   scale_color_manual(values = colors) +
   theme_custom() +
@@ -756,12 +765,13 @@ posterior_plotting <- posterior_species %>%
 
 # 6. Plot ridge plot with mean probability points
 p.solve <- ggplot(posterior_plotting, aes(y = Species, x = mean_prob, color = Species, fill=Species)) +
-  # 95% interval (transparent)
-  geom_linerange(aes(xmin = lower_95, xmax = upper_95), alpha = 0.6, size = 1) +
-  # 90% interval (solid)
-  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size = 1.5) +
+  # 95% interval 
+  geom_errorbarh(aes(xmin = lower_95, xmax = upper_95),
+                 height = 0.1, size = 0.5) +
+  # 90% interval
+  geom_linerange(aes(xmin = lower_90, xmax = upper_90), alpha = 1, size =5) +
   # Mean point
-  geom_point(shape = 124, size = 4, color = "black") +
+  geom_point(shape = 16, size = 1, color = "white") +
   scale_x_continuous(limits = c(0, 1),
                      expand = expansion(mult = c(0.02, 0.02))) +
   scale_y_discrete(labels = c("Coyote", "Domestic Cat", "Opossum", "Raccoon - Alone",
