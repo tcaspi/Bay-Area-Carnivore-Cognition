@@ -32,7 +32,7 @@ theme_custom <- function() {
 # Load and Format data
 
 ```{r}
-data <- read.csv("Data/Q1_Summary_Firsts_DummyRows_Max_07282025_Anonymized.csv") %>%  # first visits only
+data <- read.csv("Data/Q1_Summary_Firsts_Anonymized.csv") %>%  # first visits only
   filter(Species != "Gray Fox" & Species != "Red Fox") %>%   # remove foxes
   filter(Location != "Lake Chabot Dumpster") %>%  # remove Lake Chabot
   filter(is.na(Dummy)) # remove trials with no recorded data
@@ -89,7 +89,7 @@ PS.species.means.all <- data.PS %>%
             total.attempts = n()) %>% 
   mutate(p.Solve = total.solves/total.attempts)
 
-PS.species.means
+PS.species.means.all
 ```
 
 # Q1) How do species differ in their risk-taking and problem-solving behavior?

@@ -1,6 +1,6 @@
 # Bay-Area-Carnivore-Cognition
 
-This repository contains all raw data and scripts for the data analysis implemented in Stanton *et al.* (2026) titled *Traits associated with novel foraging success in urban mesopredators* and published in *Scientific Reports*. The GitHub repository associated with this manuscript is available at <https://github.com/tcaspi/Bay-Area-Carnivore-Cognition>.
+This repository contains all raw data and scripts for the data analysis implemented in Stanton *et al.* (2026) titled "**Traits associated with novel foraging success in urban mesopredators**" and published in *Scientific Reports*.
 
 Please find below a description of all raw and clean data sets and the scripts used to format the raw data, run the models, and create the figures presented in the manuscript. To access the files, download `Bay-Area-Carnivore-Cognition-main.zip` for all data sets, scripts, and figures and `Model_Output.zip` for model output.
 
@@ -8,53 +8,46 @@ Please find below a description of all raw and clean data sets and the scripts u
 
 In the `Data` folder, you will find three data files:
 
-`Q1_Summary_All_DummyRows_Max_07282025_Anonymized` and `Q1_Summary_Firsts_DummyRows_Max_07282025_Anonymized`. Both data files contain raw data from problem-solving attempts. The Summary_All data sheet contains all observations (i.e., all trials) whereas the Summary_Firsts datasheet contains only first-attempt observations (i.e., only first trials).
+`Q1_Summary_All_Anonymized` and `Q1_Summary_Firsts_Anonymized`. Both data files contain raw data from problem-solving attempts. The Summary_All data sheet contains all observations (i.e., all trials) whereas the Summary_Firsts datasheet contains only first-attempt observations (i.e., only first trials).
 
 | Column | Description |
 |---------------------------|---------------------------------------------|
-| Key | **REMOVE?** |
 | Species | Species of the subject. |
-| Subject | **ASK LAUREN** |
+| Subject | Identifier of the focal individual or group |
 | Location\* | Identifier for the study location where the observation occurred. |
 | Home | Whether or not the study location was a private residence. |
-| ObservationNumber | **??? Is this trials is is something else ASK LAUREN** |
+| ObservationNumber | The sequential number of an observation across all subjects at a given location. |
 | Date | Date on which the observation occurred. |
 | Time | Time at which the observation occurred. |
 | Photoperiod | Whether the observation occurred during the day time or night time. |
-| Weather | Weather conditions during the observation. **(clear, rainy, precip, rainy/damp, just rained, foggy) - these need clarification** |
+| Weather | Weather conditions during the observation (clear, foggy, or rainy). |
 | VisibilityIssue | Whether or not the subject was out of the camera's view for any part of the observation |
 | Arrival | Whether or not the subject in the observation was the first to arrive to the puzzle ("First") or other animals had previously visited the puzzle ("Not First") |
 | Condition | Social condition of the subject: whether it was observed alone or in a group. |
 | NumSubjectsInObservation | Number of subjects present during the observation. |
-| Interference | **ASK LAUREN** |
-| AggressionSeen | **ASK LAUREN** |
-| Dog | Whether a dog ever visited the puzzle or not. **before the subject's observation? after the subjects observation? ASK LAUREN** |
-| Coyote | **\^SAME AS ABOVE ASK LAUREN** |
-| PuzzleReset | **ASK LAUREN** |
-| TrialLengthAvg | Length in seconds of the trial. Where a group of animals were observed, this represents the average trial length across the group. **Length from when the animal enters the screen/camera or actually attempts solving or what? Need to defin what trial means...ASK LAUREN** |
-| TrialLengthMax | Length in seconds of the trial. Where a group of animals were observed, this represents the maximum trial length by any individual in the group. **SAME ISSUE AS ABOVE ASK LAUREN. ARE MAXIMUMS PER ANY INDIVIDUAL ANIMAL OR CUMULATIVE ACROSS THE GROUP??** |
-| PropVigilantAvg_RT | Proportion of time spent vigilant calculated as the duration of time spent vigilant (seconds) divided by the total observation time (seconds). Where a group of animals were observed, this represents the average proportion of time spent vigilant across the group. |
-| PropVigilantMax_RT | Proportion of time spent vigilant calculated as the duration of time spent vigilant (seconds) divided by the total observation time (seconds). Where a group of animals were observed, this represents the maximum proportion of time spent vigilant by any individual in the group. **ARE MAXIMUMS PER ANY INDIVIDUAL ANIMAL OR CUMULATIVE ACROSS THE GROUP??** |
+| Interference | Whether or not the subject cannot access the puzzle because another individual is monopolozing and/or defending the puzzle. |
+| AggressionSeen | Whether or not the subject charges, snaps/bites, body-blocks, or vocalizes at another individual. |
+| Dog | Whether a dog was seen on camera at any time at a given location. |
+| Coyote | Whether a coyote was seen on camera at any time at a given location. |
+| PuzzleReset | Whether the puzzle was interferred with by a human or dog at a given location and was therefore rebaited and testing restarted. |
+| TrialLengthMax | Length in seconds of the trial beginning when an animal enters the frame and ending when it leaves the frame. Where a group of animals were observed, this represents the maximum trial length by any individual in the group. |
+| PropVigilantMax_RT | Proportion of time spent vigilant calculated as the duration of time spent vigilant divided by the total observation time (seconds). Where a group of animals were observed, this represents the maximum proportion of time spent vigilant by any single individual in the group. |
 | LookAtCamera_RT | Binary: 1 if the subject ever looked at the camera during the observation, otherwise 0. |
 | Touch_RT | Binary: 1 if the subject ever touched the puzzle during the observation, otherwise 0. |
-| WorkTimeAvg_PS | Average amount of time in seconds the subject was alert and engaged with the puzzle across problem-solving trials. Where a group of animals were observed, this represents the average work  time across the group. |
-| WorkTimeMax_PS | Maximum observed amount of time in seconds the subject was alert and engaged with the puzzle across problem-solving trials. Where a group of animals were observed, this represents the maximum work time by any individual in the group. **ARE MAXIMUMS PER ANY INDIVIDUAL ANIMAL OR CUMULATIVE ACROSS THE GROUP (E.G., ONE RACCOON'S WORK TIME WAS 50 SECONDS OR ALL RACCOONS TOGETHER HAD A WORK TIME OF 200 SECONDS)??** |
+| WorkTimeMax_PS | Total observed amount of time in seconds the subject was alert and engaged with the puzzle across problem-solving trials. Where a group of animals were observed, this represents the maximum work time by any single individual in the group. |
 | Urinate | Indicator of whether the subject urinated during the observation. |
-| TotalExplorationAvg_RT | Average total number of exploratory behaviors (e.g., paw, pull, push, roll, etc.) recorded across the trial. Where a group of animals were observed, this represents the average total of exploratory behaviors observed across the group. |
-| TotalExplorationMax_RT | Maximum total number of exploratory behaviors (e.g., paw, pull, push, roll, etc.) recorded across risk-taking trials. Where a group of animals were observed, this represents the maximum number of exploratory behaviors exhibited by any individual in the group. **ARE MAXIMUMS PER ANY INDIVIDUAL ANIMAL OR CUMULATIVE ACROSS THE GROUP (E.G., ONE RACCOON'S TOTAL EXPLORATION WAS 5 OR ALL RACCOONS TOGETHER HAD A TOTAL EXPLORATION OF 15)??** |
-| ExploratoryDiversityAvg_PS | Average number of unique behaviors exhibited toward the puzzle across problem-solving trials. |
-| ExploratoryDiversityMax_PS | Maximum number of unique behaviors exhibited toward the puzzle across problem-solving trials. **SAME ISSUE HERE AS ABOVE** |
-| ActivityRateAvg_PS | Referred to as "Persistence" in the MS and calculated as total exploration divided by total work time. |
-| ActivityRateMax_PS | Referred to as "Persistence" in the MS and calculated as total exploration divided by total work time. **SAME ISSUE HERE AS ABOVE** |
+| TotalExplorationMax_RT | Total number of exploratory behaviors (e.g., paw, pull, push, roll, etc.) recorded across risk-taking trials. Where a group of animals were observed, this represents the maximum number of exploratory behaviors exhibited by any single individual in the group. |
+| ExploratoryDiversityMax_PS | Total number of *unique* behaviors exhibited toward the puzzle across problem-solving trials. Where a group of animals were observed, this represents the maximum number of unique exploratory behaviors exhibited by any single individual in the group. |
+| ActivityRateMax_PS | Referred to as "Persistence" in the MS and calculated as total exploration (counts) divided by total work time (seconds). Where a group of animals were observed, this represents the maximum number of exploratory behaviors and work time exhibited by any single individual in the group. |
 | Solve_PS | Whether or not the subject solved the puzzle. "DidNotAttempt" is entered when a subject did not attempt to solve the puzzle. |
 | WasSolveOffCamera | Whether or not the puzzle solve occurred off the camera.  "DidNotAttempt" is entered when a subject did not attempt to solve the puzzle. |
 | FinalSolverofLocation | Which species solved the puzzle. "None" indicates that no species solved the puzzle at that location. |
 | Solve_PS_Binary | Binary puzzle-solving success: 1 = solved, 0 = did not solve. NA indicates that the subject did not attempt to solve the puzzle. |
 | TrialNumber_RT | Species-specific trial number for the risk-taking behavioral trial. RT trial numbers track all interactions with the puzzle, regardless of whether the animal attempted to solve it. |
 | TrialNumber_PS | Species-specific trial number for the problem-solving behavioral trial. PS trial numbers were assigned only to observations in which a species made a problem-solving attempt |
-| Dummy | **I DONT REMEMBER WHAT THIS MEANS. ASK LAUREN.** |
+| Dummy | Observations that do not contain behavioral data, but indicate that an animal likely solved (off camera) and therefore used to provide a trial number |
 
-`StantonPuzzleStudyLocation_12182025_Anonymized` contains the coordinates associated with all puzzle-testing study locations.
+`StantonPuzzleStudyLocations_Anonymized` contains the coordinates associated with all puzzle-testing study locations.
 
 | Column | Description |
 |-------------------|-----------------------------------------------------|
@@ -73,6 +66,8 @@ The scripts for the full workflow are available as Rmd files in the `Code` fol
 `Q1-First-Attempts.Rmd`: this script uses the *brms* package to construct random-intercept models to compare species-level differences in baseline risk-taking and problem-solving behaviors using only first observations (i.e., first trials). The script also generates figures and a summary table of model output.
 
 `Q2-Problem-Solving.Rmd`: this script uses the *brms* package to construct random-slope models to assess within-species and among-species effects of boldness, exploration, and effort on problem-solving success. The script also runs a simulation analysis to validate excluding testing location as a random effect from models; generates composite behavioral scores for boldness, exploration, effort from raw observational data; and generates figures and a summary table of model output.
+
+`Study_Map.Rmd`: this script generates a study-area map identifying solves versus unsolved puzzle locations.
 
 ## Model Output
 
